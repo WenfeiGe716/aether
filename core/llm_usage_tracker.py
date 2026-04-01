@@ -136,6 +136,7 @@ class LLMUsageTracker:
         self._total_cost = 0.0
         self._by_provider: Dict[str, Dict[str, float]] = {}
         self._by_model: Dict[str, Dict[str, float]] = {}
+        self._by_thread: Dict[int, Dict[str, float]] = {}
 
     def record(
         self,
@@ -181,6 +182,16 @@ class LLMUsageTracker:
             mdl["output_tokens"] += output_tokens
             mdl["cost"] += cost
 
+            # Per-thread aggregation to support concurrent per-job accounting.
+            thread_id = threading.get_ident()
+            thread_stats = self._by_thread.setdefault(
+                thread_id, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0.0}
+            )
+            thread_stats["calls"] += 1
+            thread_stats["input_tokens"] += input_tokens
+            thread_stats["output_tokens"] += output_tokens
+            thread_stats["cost"] += cost
+
     # ── Fast properties for dashboard polling ──
 
     @property
@@ -209,6 +220,20 @@ class LLMUsageTracker:
                 "total_calls": self._total_calls,
                 "total_input_tokens": self._total_input_tokens,
                 "total_output_tokens": self._total_output_tokens,
+            }
+
+    def snapshot_for_thread(self, thread_id: Optional[int] = None) -> Dict:
+        """Return usage snapshot for a specific thread (defaults current thread)."""
+        tid = thread_id if thread_id is not None else threading.get_ident()
+        with self._lock:
+            stats = self._by_thread.get(
+                tid, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0.0}
+            )
+            return {
+                "total_cost": float(stats["cost"]),
+                "total_calls": int(stats["calls"]),
+                "total_input_tokens": int(stats["input_tokens"]),
+                "total_output_tokens": int(stats["output_tokens"]),
             }
 
     # ── Full summary for post-audit display ──

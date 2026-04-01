@@ -1228,9 +1228,8 @@ contract {contract_name}GenericExploit {{
         import os
         from .json_utils import extract_json_from_response, safe_json_parse
 
-        original_dir = os.getcwd()
         try:
-            os.chdir(project_dir)
+            test_cwd = str(Path(project_dir).resolve())
             env = os.environ.copy()
             foundry_bins = [
                 os.path.expanduser('~/.foundry/bin'),
@@ -1242,7 +1241,7 @@ contract {contract_name}GenericExploit {{
 
             proc = subprocess.run([
                 "forge", "test", "--json"
-            ], capture_output=True, text=True, timeout=300, env=env)
+            ], capture_output=True, text=True, timeout=300, env=env, cwd=test_cwd)
 
             output = (proc.stdout or '') + '\n' + (proc.stderr or '')
             json_blob = extract_json_from_response(output)
@@ -1276,11 +1275,6 @@ contract {contract_name}GenericExploit {{
         except Exception as e:
             logger.warning(f"forge test failed to run: {e}")
             return {'raw': {}, 'summary': {'status_code': -1, 'passed': 0, 'failed': 0, 'tests': []}}
-        finally:
-            try:
-                os.chdir(original_dir)
-            except Exception:
-                pass
     
     async def generate_multiple_tests(
         self, 

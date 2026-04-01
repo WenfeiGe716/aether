@@ -203,7 +203,7 @@ class AuditRunner:
     ) -> None:
         """Background thread: runs a single audit via AetherCLI."""
         tracker = LLMUsageTracker.get_instance()
-        snapshot_before = tracker.snapshot()
+        snapshot_before = tracker.snapshot_for_thread()
 
         # Register with demuxers for stdout/stderr capture
         if job.audit_status:
@@ -233,7 +233,7 @@ class AuditRunner:
             )
 
             # Compute cost delta from snapshot
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
 
             # Extract findings from the returned results dict
@@ -261,7 +261,7 @@ class AuditRunner:
             self._job_manager.complete_job(job.job_id, findings, cost_delta)
 
         except Exception as e:
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
             # Store per-job LLM stats even on failure
             if job.audit_status:
@@ -319,7 +319,7 @@ class AuditRunner:
     ) -> None:
         """Background thread: runs PoC generation via AetherCLI."""
         tracker = LLMUsageTracker.get_instance()
-        snapshot_before = tracker.snapshot()
+        snapshot_before = tracker.snapshot_for_thread()
 
         if job.audit_status:
             if self._demuxer:
@@ -347,7 +347,7 @@ class AuditRunner:
                 )
             )
 
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
             if job.audit_status:
                 calls_delta = snapshot_after["total_calls"] - snapshot_before["total_calls"]
@@ -356,7 +356,7 @@ class AuditRunner:
             self._job_manager.complete_job(job.job_id, 0, cost_delta)
 
         except Exception as e:
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
             if job.audit_status:
                 calls_delta = snapshot_after["total_calls"] - snapshot_before["total_calls"]
@@ -406,7 +406,7 @@ class AuditRunner:
     ) -> None:
         """Background thread: runs report generation via AetherCLI."""
         tracker = LLMUsageTracker.get_instance()
-        snapshot_before = tracker.snapshot()
+        snapshot_before = tracker.snapshot_for_thread()
 
         if job.audit_status:
             if self._demuxer:
@@ -432,7 +432,7 @@ class AuditRunner:
                 )
             )
 
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
             if job.audit_status:
                 calls_delta = snapshot_after["total_calls"] - snapshot_before["total_calls"]
@@ -441,7 +441,7 @@ class AuditRunner:
             self._job_manager.complete_job(job.job_id, 0, cost_delta)
 
         except Exception as e:
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
             if job.audit_status:
                 calls_delta = snapshot_after["total_calls"] - snapshot_before["total_calls"]
@@ -500,7 +500,7 @@ class AuditRunner:
     ) -> None:
         """Background thread: runs a GitHub audit via AetherCLI."""
         tracker = LLMUsageTracker.get_instance()
-        snapshot_before = tracker.snapshot()
+        snapshot_before = tracker.snapshot_for_thread()
 
         if job.audit_status:
             if self._demuxer:
@@ -525,7 +525,7 @@ class AuditRunner:
                 resume_scope_id=scope_id,
             )
 
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
 
             # Use return value (actual vulnerability count), fall back to stdout-parsed
@@ -542,7 +542,7 @@ class AuditRunner:
             self._job_manager.complete_job(job.job_id, findings, cost_delta)
 
         except Exception as e:
-            snapshot_after = tracker.snapshot()
+            snapshot_after = tracker.snapshot_for_thread()
             cost_delta = snapshot_after["total_cost"] - snapshot_before["total_cost"]
             if job.audit_status:
                 calls_delta = snapshot_after["total_calls"] - snapshot_before["total_calls"]
