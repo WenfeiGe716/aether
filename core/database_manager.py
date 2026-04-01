@@ -1190,12 +1190,8 @@ class AetherDatabase:
                 if not row:
                     return False
 
-                old_usage_count = row[10]  # usage_count column index
-                old_success_rate = row[11]  # success_rate column index
-                usage_count = old_usage_count + 1
-                success_rate = (
-                    (old_success_rate * old_usage_count) + (1 if success else 0)
-                ) / usage_count
+                usage_count = row[10] + 1  # usage_count column index
+                success_rate = (row[11] * usage_count + (1 if success else 0)) / (usage_count + 1)  # success_rate
 
                 conn.execute('''
                     UPDATE learning_patterns

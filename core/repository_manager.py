@@ -9,7 +9,6 @@ GitHub audit workflow. Uses a local cache directory to avoid repeated clones.
 import os
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple, Union
@@ -19,23 +18,15 @@ from rich.console import Console
 from core.database_manager import AetherDatabase
 
 
-def _run(
-    cmd: list[str],
-    cwd: Optional[Union[str, Path]] = None,
-    timeout: int = 30,
-    env_override: Optional[dict] = None,
-) -> Tuple[int, str, str]:
+def _run(cmd: list[str], cwd: Optional[Union[str, Path]] = None, timeout: int = 30) -> Tuple[int, str, str]:
     try:
-        merged_env = {**os.environ, 'GIT_ASKPASS': '/bin/echo'}
-        if env_override:
-            merged_env.update(env_override)
         process = subprocess.Popen(
             cmd,
             cwd=str(cwd) if cwd else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env=merged_env  # Prevent interactive prompts unless overridden.
+            env={**os.environ, 'GIT_ASKPASS': '/bin/echo'}  # Prevent interactive prompts
         )
         out, err = process.communicate(timeout=timeout)
         return process.returncode, out, err
@@ -99,46 +90,20 @@ class RepositoryManager:
         if repo_dir.exists():
             return CloneResult(repo_path=repo_dir, is_new_clone=False)
 
-        # Use askpass flow instead of embedding token in URL (reduces secret exposure).
-        askpass_path = None
-        env_override = None
+        # Build authenticated URL if token provided and URL is https
+        clone_url = normalized_url
         if self.github_token and normalized_url.startswith('https://'):
-            askpass_script = (
-                "#!/bin/sh\n"
-                "case \"$1\" in\n"
-                "  *Username*) echo \"x-access-token\" ;;\n"
-                f"  *Password*) echo \"{self.github_token}\" ;;\n"
-                "  *) echo \"\" ;;\n"
-                "esac\n"
-            )
-            fd, askpass_path = tempfile.mkstemp(prefix="aether_git_askpass_", text=True)
-            with os.fdopen(fd, "w") as f:
-                f.write(askpass_script)
-            os.chmod(askpass_path, 0o700)
-            env_override = {
-                "GIT_ASKPASS": askpass_path,
-                "GIT_TERMINAL_PROMPT": "0",
-            }
+            clone_url = normalized_url.replace('https://', f"https://{self.github_token}@", 1)
 
-        try:
-            code, out, err = _run(
-                ['git', 'clone', '--depth', '1', normalized_url, str(repo_dir)],
-                env_override=env_override,
-            )
-            if code != 0:
-                # Retry once without askpass override if clone failed with token flow.
-                if env_override:
-                    code2, out2, err2 = _run(['git', 'clone', '--depth', '1', normalized_url, str(repo_dir)])
-                    if code2 != 0:
-                        raise RuntimeError(f"git clone failed: {err or err2}")
-                else:
-                    raise RuntimeError(f"git clone failed: {err}")
-        finally:
-            if askpass_path and os.path.exists(askpass_path):
-                try:
-                    os.remove(askpass_path)
-                except OSError:
-                    pass
+        code, out, err = _run(['git', 'clone', '--depth', '1', clone_url, str(repo_dir)])
+        if code != 0:
+            # Attempt without token if first attempt failed with token
+            if self.github_token and '@' in clone_url:
+                code2, out2, err2 = _run(['git', 'clone', '--depth', '1', normalized_url, str(repo_dir)])
+                if code2 != 0:
+                    raise RuntimeError(f"git clone failed: {err or err2}")
+            else:
+                raise RuntimeError(f"git clone failed: {err}")
 
         # In test environments where git is mocked, ensure the target directory exists
         if not repo_dir.exists():

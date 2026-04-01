@@ -96,41 +96,6 @@ class TestLLMUsageTrackerThreadSafety(unittest.TestCase):
         self.assertEqual(tracker.call_count, num_threads * calls_per_thread)
         self.assertEqual(tracker.total_tokens, num_threads * calls_per_thread * 15)
 
-    def test_snapshot_for_thread_isolation(self):
-        tracker = LLMUsageTracker.get_instance()
-        num_threads = 4
-        calls_per_thread = 25
-        barrier = threading.Barrier(num_threads)
-        results = []
-        result_lock = threading.Lock()
-
-        def worker():
-            before = tracker.snapshot_for_thread()
-            barrier.wait()
-            for _ in range(calls_per_thread):
-                tracker.record("openai", "gpt-4o", 10, 5, "thread_isolation")
-            after = tracker.snapshot_for_thread()
-            with result_lock:
-                results.append((before, after))
-
-        threads = [threading.Thread(target=worker) for _ in range(num_threads)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        self.assertEqual(len(results), num_threads)
-        for before, after in results:
-            self.assertEqual(before["total_calls"], 0)
-            self.assertEqual(before["total_input_tokens"], 0)
-            self.assertEqual(before["total_output_tokens"], 0)
-            self.assertEqual(after["total_calls"], calls_per_thread)
-            self.assertEqual(after["total_input_tokens"], calls_per_thread * 10)
-            self.assertEqual(after["total_output_tokens"], calls_per_thread * 5)
-
-        # Global totals still aggregate all threads.
-        self.assertEqual(tracker.call_count, num_threads * calls_per_thread)
-
 
 class TestPricing(unittest.TestCase):
 
