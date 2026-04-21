@@ -140,6 +140,7 @@ class LLMFalsePositiveFilter:
                     continue
 
                 sent_to_llm += 1
+                print(f"   🔎 LLM validating ({sent_to_llm}): {vuln.get('vulnerability_type', 'unknown')} at line {vuln.get('line_number', vuln.get('line', '?'))}", flush=True)
 
                 # Always pass FULL contract code to validation, not snippet
                 vuln_contract_name = vuln.get('contract_name', contract_name)
@@ -275,17 +276,24 @@ class LLMFalsePositiveFilter:
         
         try:
             logger.debug(f"Validating with context: code={len(context.get('contract_code',''))} chars, imports={len(context.get('imports', []) or [])}")
-            
-            response = await self.llm_analyzer._call_llm(
-                validation_prompt,
-                model=validation_model  # Use configured validation model (OpenAI or Gemini)
-            )
-            
+
+            # Use a direct API call with 45s HTTP timeout instead of _call_llm
+            # (which has 120s timeout + 3 fallback models = can hang 360s+).
+            # asyncio.wait_for can't cancel asyncio.to_thread threads.
+            response = await self._fast_llm_call(validation_prompt, validation_model)
+
             result = self._parse_validation_response(response)
             logger.debug(f"Validation result: is_fp={result.is_false_positive}, confidence={result.confidence}")
             self.validation_cache[cache_key] = result
             return result
             
+        except asyncio.TimeoutError:
+            logger.warning("LLM validation timed out (60s) for %s", vulnerability.get("vulnerability_type", "unknown"))
+            return ValidationResult(
+                is_false_positive=False,
+                confidence=0.5,
+                reasoning="LLM validation timed out — keeping finding as precaution"
+            )
         except Exception as e:
             logger.error(f"LLM validation failed: {e}")
             # Return neutral result if validation fails
@@ -295,10 +303,76 @@ class LLMFalsePositiveFilter:
                 reasoning=f"Validation failed: {str(e)}"
             )
     
+    async def _fast_llm_call(self, prompt: str, model: str) -> Optional[str]:
+        """Single LLM call with 45s HTTP timeout — no fallbacks.
+
+        Unlike ``_call_llm`` (120s timeout, 3 fallback models = up to 360s),
+        this makes one attempt with a tight timeout. Designed for per-finding
+        validation where speed matters more than exhaustive retry.
+        """
+        is_gemini = model.startswith("gemini-")
+        is_anthropic = model.startswith("claude-")
+
+        if is_gemini and self.llm_analyzer.gemini_api_key:
+            import requests as req
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={self.llm_analyzer.gemini_api_key}"
+            )
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": 2000,
+                    "temperature": 0.1,
+                    "thinkingConfig": {"thinkingBudget": 0},  # Disable thinking for fast validation
+                },
+            }
+            resp = await asyncio.to_thread(req.post, url, json=payload, timeout=(10, 45))
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    return parts[0].get("text", "")
+            return None
+
+        elif is_anthropic and self.llm_analyzer.anthropic_api_key:
+            import anthropic
+            client = anthropic.Anthropic(
+                api_key=self.llm_analyzer.anthropic_api_key, timeout=45.0
+            )
+            resp = await asyncio.to_thread(
+                client.messages.create,
+                model=model, max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return resp.content[0].text if resp.content else None
+
+        elif self.llm_analyzer.api_key:
+            from openai import OpenAI
+            client = OpenAI(api_key=self.llm_analyzer.api_key, timeout=45.0)
+            params: dict = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are an expert smart contract security auditor."},
+                    {"role": "user", "content": prompt},
+                ],
+            }
+            if model.startswith("gpt-5"):
+                params["max_completion_tokens"] = 4000
+            else:
+                params["max_tokens"] = 4000
+                params["temperature"] = 0.1
+            resp = await asyncio.to_thread(client.chat.completions.create, **params)
+            return resp.choices[0].message.content
+
+        return None
+
     def _prepare_validation_context(
-        self, 
-        vulnerability: Dict[str, Any], 
-        contract_code: str, 
+        self,
+        vulnerability: Dict[str, Any],
+        contract_code: str,
         contract_name: str
     ) -> Dict[str, Any]:
         """Prepare context for vulnerability validation."""
@@ -306,9 +380,16 @@ class LLMFalsePositiveFilter:
         # Extract relevant code around the vulnerability
         line_number = vulnerability.get('line_number', 0)
 
-        # ALWAYS use full contract code for validation - no more 10-line limitation!
-        # This allows the LLM to see imports, parent classes, and design comments
-        context_lines = contract_code
+        # Use contract code capped at 30K chars for validation — the LLM needs
+        # enough context to see imports, modifiers, and related functions, but
+        # 118K+ char multi-file sources cause timeouts and unnecessary cost.
+        # The code snippet + surrounding context + function context provide
+        # the detailed view; the full code provides the broader picture.
+        _MAX_VALIDATION_CODE = 30_000
+        if len(contract_code) > _MAX_VALIDATION_CODE:
+            context_lines = contract_code[:_MAX_VALIDATION_CODE] + "\n\n// [truncated for validation — full code exceeds 30K chars]"
+        else:
+            context_lines = contract_code
         
         # Detect oracle type if contract uses oracles
         oracle_type = self._detect_oracle_type(contract_code)

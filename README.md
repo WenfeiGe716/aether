@@ -1,8 +1,68 @@
-# Aether v4.7 — Smart Contract Security Analysis Framework
+# Aether v6.0 — Smart Contract Security Analysis Framework
 
-**Version 4.7** | [What's New in v4.7](#whats-new-in-v47) | [Changelog](#changelog)
+**Version 6.0** | [What's New in v6.0](#whats-new-in-v60) | [Changelog](#changelog)
 
-Aether is a Python-based framework for analyzing Solidity smart contracts, generating vulnerability findings, producing Foundry-based proof-of-concept (PoC) tests, and validating exploits on mainnet forks. It combines Solidity AST parsing, taint analysis, control flow graph analysis, cross-contract analysis, Halmos symbolic execution, 180+ pattern-based static detectors, a structured deep analysis LLM pipeline (GPT/Gemini/Claude), 14 protocol archetypes, a 75+ exploit knowledge base, ML-calibrated detection, token quirks detection, invariant extraction, related contract context resolution, and advanced context-aware filtering into a single persistent full-screen TUI.
+Aether is a Python-based framework for analyzing Solidity smart contracts, generating vulnerability findings, producing Foundry-based proof-of-concept (PoC) tests, and validating exploits on mainnet forks. It combines Solidity AST parsing, taint analysis, control flow graph analysis, cross-contract analysis, Halmos symbolic execution, 180+ pattern-based static detectors, a **collaborative multi-agent LLM pipeline** (GPT/Gemini/Claude) with shared [SAGE](https://github.com/l33tdawg/sage) institutional memory, 14 protocol archetypes, a 75+ exploit knowledge base, ML-calibrated detection, token quirks detection, invariant extraction, related contract context resolution, and advanced context-aware filtering into a single persistent full-screen TUI.
+
+## What's New in v6.0
+
+**Collaborative Agent Pipeline** — The deep analysis pipeline transforms from 5 independent passes to 5 collaborative agents sharing structured knowledge through SAGE institutional memory:
+
+- **Shared session memory** — Each pass stores findings, dismissals, and verified protections in a per-audit SAGE session. Later passes receive "Prior Pass Intelligence" instead of flat text summaries.
+- **Dismissals as first-class records** — When Pass 3 dismisses a concern (e.g., "reentrancy protected by nonReentrant modifier"), Pass 5 won't re-flag it. This directly eliminates the #1 source of duplicate findings.
+- **Challenge mechanism** — Later passes can override prior dismissals, but must provide NEW evidence. "Pass 3 didn't see the callback path through this other function" is valid. "I disagree" is not.
+- **Cross-pass confirmation** — When multiple passes independently confirm a finding, confidence gets a 15% boost. Cross-confirmed findings are prioritized in reports.
+- **SAGE required** — Institutional memory is now required, not optional. No SAGE = no audit. Run `docker compose up -d` to start.
+
+---
+
+## What's New in v5.0
+
+**SAGE Institutional Memory** — Aether now learns from every audit, reducing false positives and improving finding quality over time:
+
+- **Pre-trained knowledge base** — Ships with 170 institutional memories: 75 exploit patterns, 63 protocol archetype checklists, 12 token quirk categories, 20 curated historical exploits (DAO, Wormhole, Euler, Ronin, Curve, and more)
+- **Pipeline integration** — SAGE recalls historical findings and exploit patterns in deep analysis Passes 3 and 5; stores audit learnings post-pipeline for future recall
+- **Feedback loop** — Confirmed findings get stored as high-confidence facts; rejected findings (false positives) get stored so future audits avoid them. AccuracyTracker outcomes automatically feed into SAGE
+- **Validation pipeline** — New Stage -1: SAGE known FP check filters findings that match previously rejected patterns before any other validation runs
+- **Detector accuracy sync** — `SageFeedbackManager.sync_detector_accuracy()` identifies high/low performing detectors and stores dos/don'ts reflections
+- **Auto-seed on startup** — First launch with SAGE Docker running auto-seeds the pre-trained knowledge base. Version-aware: skips if already seeded
+- **TUI integration** — SAGE ON/OFF status with memory count displayed in the CostBar
+- **Docker deployment** — `docker compose up -d` starts SAGE; config via `sage_enabled`/`sage_url` in `~/.aether/config.yaml`
+- **Graceful degradation** — SAGE being unavailable never breaks any audit functionality
+
+**Contributors:** Thanks to [@sashavdv](https://github.com/sashavdv) for fixing hardcoded path variables ([PR #1](../../pull/1)) and [@pro258b](https://github.com/pro258b) for identifying the missing `validate_anthropic_key()` method ([PR #2](../../pull/2)).
+
+### SAGE Quick Start
+
+SAGE is a persistent institutional memory system powered by BFT consensus. See the [SAGE project](https://github.com/l33tdawg/sage) for full documentation.
+
+```bash
+# Install SAGE Python SDK
+pip install sage-agent-sdk
+
+# Start SAGE (Docker required)
+docker compose up -d
+
+# Run Aether — SAGE auto-seeds on first launch
+python aether.py
+
+# Regenerate seed fixtures after updating knowledge bases (dev only)
+python -c "from core.sage_seeder import SageSeeder; SageSeeder.generate_seed_fixtures()"
+```
+
+### How SAGE Improves Audits
+
+```
+Audit 1 → Findings + FPs → Record outcomes in SAGE
+                                    ↓
+Audit 2 → SAGE recalls FP patterns → Fewer false positives
+                                    ↓
+Audit 3 → Richer institutional context → Better severity calibration
+                                    ↓
+Audit N → Institutional expert-level knowledge → Bug-bounty-quality findings
+```
+
+---
 
 ## What's New in v4.7
 

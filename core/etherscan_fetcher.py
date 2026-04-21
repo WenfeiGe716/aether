@@ -35,73 +35,81 @@ class EtherscanFetcher:
         'goerli': {
             'name': 'Ethereum Goerli',
             'chain_id': 5,
-            'api_url': 'https://api-goerli.etherscan.io/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://goerli.etherscan.io',
             'test_address': '0x07865c6e87b9f70255377e024ace6630c1eaa37f'  # USDC on Goerli
         },
         'sepolia': {
             'name': 'Ethereum Sepolia',
             'chain_id': 11155111,
-            'api_url': 'https://api-sepolia.etherscan.io/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://sepolia.etherscan.io',
             'test_address': '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238'  # USDC on Sepolia
         },
         'polygon': {
             'name': 'Polygon Mainnet',
             'chain_id': 137,
-            'api_url': 'https://api.polygonscan.com/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://polygonscan.com',
             'test_address': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174'  # USDC on Polygon
         },
         'arbitrum': {
             'name': 'Arbitrum One',
             'chain_id': 42161,
-            'api_url': 'https://api.arbiscan.io/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://arbiscan.io',
             'test_address': '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'  # USDC on Arbitrum
         },
         'optimism': {
             'name': 'Optimism',
             'chain_id': 10,
-            'api_url': 'https://api-optimistic.etherscan.io/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://optimistic.etherscan.io',
             'test_address': '0x7f5c764cbc14f9669b88837ca1490cca17c31607'  # USDC on Optimism
         },
         'bsc': {
             'name': 'BNB Smart Chain',
             'chain_id': 56,
-            'api_url': 'https://api.bscscan.com/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://bscscan.com',
             'test_address': '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d'  # USDC on BSC
         },
         'base': {
             'name': 'Base',
             'chain_id': 8453,
-            'api_url': 'https://api.basescan.org/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://basescan.org',
             'test_address': '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'  # USDC on Base
         },
         'polygon_zkevm': {
             'name': 'Polygon zkEVM',
             'chain_id': 1101,
-            'api_url': 'https://api-zkevm.polygonscan.com/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://zkevm.polygonscan.com',
             'test_address': '0xa8ce8aee21bc2a48a5ef670afcc9274c7bbbc035'  # USDC on Polygon zkEVM
         },
         'avalanche': {
             'name': 'Avalanche C-Chain',
             'chain_id': 43114,
-            'api_url': 'https://api.snowtrace.io/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://snowtrace.io',
             'test_address': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664'  # USDC on Avalanche
         },
         'fantom': {
             'name': 'Fantom',
             'chain_id': 250,
-            'api_url': 'https://api.ftmscan.com/v2/api',
+            'api_url': 'https://api.etherscan.io/v2/api',
             'explorer_url': 'https://ftmscan.com',
             'test_address': '0x04068da6c83afcfa0e13ba15a6696662335d5b75'  # USDC on Fantom
-        }
+        },
+        'monad': {
+            'name': 'Monad',
+            'chain_id': 10143,
+            'api_url': 'https://api.monadscan.com/api',
+            'explorer_url': 'https://monadscan.com',
+            'test_address': '0x4b8057e5cdFAf53222580DFAc54f327fE11C2078',
+            'separate_api_key': True,  # Requires separate Monadscan API key
+        },
     }
 
     # Non-EVM chain support (for future expansion)
@@ -356,10 +364,15 @@ class EtherscanFetcher:
         self.console.print(f"[cyan]🔍 Fetching contract source code for {address} on {self.SUPPORTED_NETWORKS[target_network]['name']}...[/cyan]")
 
         # Set base URL for the target network
-        base_url = self.SUPPORTED_NETWORKS[target_network]['api_url']
-        chain_id = self.SUPPORTED_NETWORKS[target_network]['chain_id']
+        network_info = self.SUPPORTED_NETWORKS[target_network]
+        base_url = network_info['api_url']
+        chain_id = network_info['chain_id']
 
-        url = f"{base_url}?chainid={chain_id}&module=contract&action=getsourcecode&address={address}&apikey={self.api_key}"
+        # Networks with separate APIs (e.g. Monadscan) use V1 format (no chainid)
+        if network_info.get('separate_api_key'):
+            url = f"{base_url}?module=contract&action=getsourcecode&address={address}&apikey={self.api_key}"
+        else:
+            url = f"{base_url}?chainid={chain_id}&module=contract&action=getsourcecode&address={address}&apikey={self.api_key}"
 
         # Rate limiting
         time.sleep(self.request_delay)
@@ -881,7 +894,13 @@ solc = "{solc_version_str}"
         if not self.api_key:
             return {'error': 'Etherscan API key not configured'}
 
-        url = f"{self.base_url}?chainid=1&module=contract&action=getsourcecode&address={address}&apikey={self.api_key}"
+        net = self.SUPPORTED_NETWORKS[self.current_network]
+        chain_id = net['chain_id']
+        base_url = net['api_url']
+        if net.get('separate_api_key'):
+            url = f"{base_url}?module=contract&action=getsourcecode&address={address}&apikey={self.api_key}"
+        else:
+            url = f"{base_url}?chainid={chain_id}&module=contract&action=getsourcecode&address={address}&apikey={self.api_key}"
 
         try:
             response = requests.get(url, timeout=10)

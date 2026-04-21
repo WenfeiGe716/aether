@@ -1,0 +1,55 @@
+# Aether SAGE Stack — Institutional memory with semantic embeddings
+#
+# Single command: docker compose up -d
+# Pulls nomic-embed-text on first run (~274MB, one-time download).
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aether-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # One-shot: pulls embedding model if not present, then exits
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: aether-ollama-init
+    entrypoint: ["/bin/sh", "-c", "sleep 3 && OLLAMA_HOST=http://ollama:11434 ollama pull nomic-embed-text"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  sage:
+    build:
+      context: .
+      dockerfile: Dockerfile.sage
+    platform: linux/amd64
+    container_name: aether-sage
+    ports:
+      - "${SAGE_PORT:-8888}:8080"
+    volumes:
+      - sage-data:/root/.sage
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/v1/dashboard/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  sage-data:
+    driver: local
+  ollama-data:
+    driver: local
